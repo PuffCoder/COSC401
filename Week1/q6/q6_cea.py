@@ -26,11 +26,12 @@ def lge(code_a, code_b):
 def initial_S(domains):
     """Initial members of S as the most specific hypothesis."""
     return {tuple('None' for _ in domains)}  # Each feature has 'None' indicating no generalization
-    
+    # return {tuple('?' for _ in domains)}  # '?' indicates any value is acceptable for each feature
+ 
 def initial_G(domains):
     """Initial members of G as the most general hypothesis."""
     return {tuple('?' for _ in domains)}  # '?' indicates any value is acceptable for each feature
- 
+    # return {tuple('None' for _ in domains)}  # Each 
 
 
 def minimal_generalisations(code, x):
@@ -120,8 +121,37 @@ def cea_trace(domains, D):
 
     return S_trace, G_trace
 
-# TEST
-# 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+# ======================== TEST 1 ======================================================================
+domains = [
+    {'red', 'blue'}
+]
+
+training_examples = [
+    (('red',), True)
+]
+
+S_trace, G_trace = cea_trace(domains, training_examples)
+print(len(S_trace), len(G_trace))
+print(all(type(x) is set for x in S_trace + G_trace))
+S, G = S_trace[-1], G_trace[-1]
+print(len(S), len(G))
+print('\n')
+
+# ======================== TEST 2 ======================================================================
+domains = [
+    {'T', 'F'}
+]
+
+training_examples = []  # no training examples
+
+S_trace, G_trace = cea_trace(domains, training_examples)
+print(len(S_trace), len(G_trace))
+S, G = S_trace[-1], G_trace[-1]
+print(len(S), len(G))
+print('\n')
+# ======================== TEST 3 ======================================================================
+
+
 domains = [
     ('T', 'F'),
     ('T', 'F'),
@@ -134,20 +164,5 @@ training_examples = [
 
 S_trace, G_trace = cea_trace(domains, training_examples)
 print(len(S_trace), len(G_trace))
-S, G = S_trace[-1], G_trace[-1]
-print(len(S), len(G))
-
-
-domains = [
-    {'red', 'blue'}
-]
-
-training_examples = [
-    (('red',), True)
-]
-
-S_trace, G_trace = cea_trace(domains, training_examples)
-print(len(S_trace), len(G_trace))
-print(all(type(x) is set for x in S_trace + G_trace))
 S, G = S_trace[-1], G_trace[-1]
 print(len(S), len(G))

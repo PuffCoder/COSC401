@@ -1,91 +1,142 @@
-def decode(code):
-    """Takes a 4-tuple of integers and returns the corresponding hypothesis.
-    The first and last two integers of the tuple correspond to opposing corners of a rectangle."""
-    values = list(code)
-    x1, y1, x2, y2 = code
-    lower_x, upper_x = min(x1, x2), max(x1, x2)
-    lower_y, upper_y = min(y1, y2), max(y1, y2)
-    def h(x):
-        return lower_x <= x[0] <= upper_x and lower_y <= x[1] <= upper_y
-    return h
-
-def match(code, x):
-    """Takes a code and returns True if the corresponding hypothesis returns
-    True (positive) for the given input."""
-    return decode(code)(x)
-    
-def lge(code_a, code_b):
-    """Takes two codes and returns True if code_a is less general or equal
-    to code_b."""
-    x1_a, y1_a, x2_a, y2_a = code_a
-    x1_b, y1_b, x2_b, y2_b = code_b
-    return (x1_a <= x1_b and y1_a <= y1_b and x2_a >= x2_b and y2_a >= y2_b)
 
 def initial_S(domains):
-    """Takes a list of domains and returns a set where each element is a
-    code for the initial members of S."""
-    return [tuple([min(domain) for domain in domains] + [max(domain) for domain in domains])]
+    return {tuple(None for _ in range(len(domains)))}
+#   return [tuple([min(domain) for domain in domains] + [max(domain) for domain in domains])]
 
-    
+
 def initial_G(domains):
-    """Takes a list of domains and returns a set where each element is a
-    code for the initial members of G."""
-    return [tuple(['?' for _ in domains] * 4)]
+    return {tuple('?' for _ in range(len(domains)))}
+
+def decode(code):
+    def h(x):
+        return all(code[i] is not None and (code[i] == "?" or code[i] == x[i]) for i in range(len(code)))
+    return h
+
+def consistent(code, x):
+    return decode(code)(x)
+
+
+def lge(code_a, code_b):
+    if None in code_a:
+        return True
+    for ha, hb in zip(code_a, code_b):
+        if not (ha == hb or (ha != hb and hb == '?')):
+            return False
+    return True
 
 def minimal_generalisations(code, x):
-    """Takes a code (corresponding to a hypothesis) and returns the set of all
-    codes that are the minimal generalisations of the given code with respect
-    to the given input x."""
-    x1, y1, x2, y2 = code
-    x_x, y_x = x
-    return [(min(x1, x_x), min(y1, y_x), max(x2, x_x), max(y2, y_x))]
+    h_hypothesis = set()
+    g_hypothesis = list(code).copy()
+    for i in range(len(g_hypothesis)):
+        if g_hypothesis[i] is None:
+            g_hypothesis[i] = x[i]
+        elif g_hypothesis[i] != x[i]:
+            g_hypothesis[i] = "?"
+    h_hypothesis.add(tuple(g_hypothesis))
+    return h_hypothesis
 
+def minimal_specialisations(code, domains, x):
+    s_hypothesis = set()
+    for i in range(len(code)):
+        if code[i] == '?':
+            for feature in domains[i]:
+                if feature != x[i]:
+                    h_hypothesis = list(code).copy()
+                    h_hypothesis[i] = feature
+                    s_hypothesis.add(tuple(h_hypothesis))
+    return s_hypothesis
 
-def minimal_specialisations(cc, domains, x):
-    """Takes a code (corresponding to a hypothesis) and returns the set of all
-    codes that are the minimal specialisations of the given code with respect
-    to the given input x."""
-    x1, y1, x2, y2 = cc
-    x_x, y_x = x
-    min_x, max_x = domains[0]
-    min_y, max_y = domains[1]
-    return [(x1 if x1 != x_x else min_x, y1, x2, y2), (x1, y1 if y1 != y_x else min_y, x2, y2),
-            (x1, y1, x2 if x2 != x_x else max_x, y2), (x1, y1, x2, y2 if y2 != y_x else max_y)]
 
 
 def cea_trace(domains, D):
     S_trace, G_trace = [], []
     S = initial_S(domains)
     G = initial_G(domains)
+    print(S)
+    
     S_trace.append(S.copy())
     G_trace.append(G.copy())
 
     for x, y in D:
-        if y:  # if positive
-            G = [g for g in G if match(g, x)]
-            S = [S for S in S if match(S, x)] + [s for s in minimal_generalisations(S, x) if any(lge(g, S) for g in G)]
-        else:  # if negative
-            S = [S for S in S if not match(S, x)]
-            G = [g for g in G if not match(g, x)] + [g for g in minimal_specialisations(G, domains, x) if any(lge(g, S) for S in S)]
-
+        if y:  # 如果是正例
+            G = {g for g in G if consistent(g, x)}  # 从 G 中移除与 x 不一致的假设
+            S_to_remove = set()
+            for s in S:
+                if not consistent(s, x):  # 找到 S 中所有与 x 不一致的假设
+                    S.remove(s)
+                    for h in minimal_generalisations(s, x):
+                        if all(consistent(h, xi) for xi, yi in D if yi):  # 确保 h 与所有正例一致
+                            S.add(h)
+            S = {h for h in S if not any(lge(h2, h) and h2 != h for h2 in S)}  # 移除更一般的假设
+        else:  # 如果是反例
+            S = {s for s in S if consistent(s, x)}  # 从 S 中移除与 x 一致的假设
+            G_to_remove = set()
+            for g in G.copy():  # 使用 G.copy() 进行迭代
+                if consistent(g, x):
+                    G.remove(g)
+                    for h in minimal_specialisations(g, domains, x):
+                        # 确保新假设 h 与所有已知反例不一致
+                        if not any(consistent(h, xi) and not yi for xi, yi in D):
+                            G.add(h)
+            G = {h for h in G if not any(lge(h, h2) and h2 != h for h2 in G)}  # 移除更特殊的假设
+        
         S_trace.append(S.copy())
         G_trace.append(G.copy())
 
     return S_trace, G_trace
 
-# TEST
-# 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+
+
+
+
+
+
+
+
+
+
+# ======================== TEST 1 ======================================================================
 domains = [
-    ('T', 'F'),
-    ('T', 'F'),
+    {'red', 'blue'}
 ]
 
 training_examples = [
-    (('F', 'F'), True),
-    (('T', 'T'), False),
+    (('red',), True)
 ]
 
 S_trace, G_trace = cea_trace(domains, training_examples)
 print(len(S_trace), len(G_trace))
+print(all(type(x) is set for x in S_trace + G_trace))
 S, G = S_trace[-1], G_trace[-1]
 print(len(S), len(G))
+
+# # # ======================== TEST 2 ======================================================================
+# domains = [
+#     {'T', 'F'}
+# ]
+
+# training_examples = []  # no training examples
+
+# S_trace, G_trace = cea_trace(domains, training_examples)
+# print(len(S_trace), len(G_trace))
+# S, G = S_trace[-1], G_trace[-1]
+# print(len(S), len(G))
+
+# # # ======================== TEST 3 ======================================================================
+
+
+# domains = [
+#     ('T', 'F'),
+#     ('T', 'F'),
+# ]
+
+# training_examples = [
+#     (('F', 'F'), True),
+#     (('T', 'T'), False),
+# ]
+
+# S_trace, G_trace = cea_trace(domains, training_examples)
+# print(len(S_trace), len(G_trace))
+# S, G = S_trace[-1], G_trace[-1]
+# print(len(S), len(G))

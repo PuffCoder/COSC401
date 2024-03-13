@@ -1,107 +1,126 @@
 
-def initial_S(domains):
-    """Initial members of S as the most specific hypothesis."""
-    # Correctly return a set containing the most specific hypothesis
-    return {tuple('None' for _ in domains)}  # Each feature has 'None' indicating no generalization
-    
-def initial_G(domains):
-    """Initial members of G as the most general hypothesis."""
-    # Correctly return a set containing the most general hypothesis
-    return {tuple('?' for _ in domains)}  # '?' indicates any value is acceptable for each feature
-
-def match(code, x):
-    """Takes a code and returns True if the corresponding hypothesis returns True (positive) for the given input."""
-    return decode(code)(x)
-
 def decode(code):
-    """Takes a code and returns the corresponding hypothesis."""
     def h(x):
-        # Returns True if all constraints in code match the corresponding values in x, or if the constraint is '?'
-        return all(c == '?' or c == xi for c, xi in zip(code, x))
+        return all(code[i] != None and (code[i] == "?" or code[i] == x[i]) for i in range(len(code)))
     return h
-
-def minimal_generalisations(code, x):
-    """Generalise the hypothesis minimally so that it matches x."""
-    generalisations = set()
-    for i, (c, xi) in enumerate(zip(code, x)):
-        if c == 'None' or c == xi:
-            new_code = list(code)
-            new_code[i] = xi
-            generalisations.add(tuple(new_code))
-        elif c == '?':
+        
+def match(code, x):
+    return decode(code)(x)
+    
+def lge(code_a, code_b):
+    if None in code_a:
+        return True
+        
+    for a, b in zip(code_a, code_b):
+        if a != '?' and (b == '?' or a == b):
+            continue
+        elif a == '?' and b == '?':
             continue
         else:
-            new_code = list(code)
-            new_code[i] = '?'
-            generalisations.add(tuple(new_code))
-    return generalisations
+            return False
+    return True 
+
+            
+def initial_S(domains):
+    return {tuple(None for _ in range(len(domains)))}
+    
+    
+def initial_G(domains):
+    return {tuple('?' for  _ in range(len(domains)))}
+    
+
+def minimal_generalisations(code, x):
+    specialisations = set()
+    g_hypothesis = list(code).copy()
+    
+    for i,value in enumerate(g_hypothesis):
+        if value == None:
+            g_hypothesis[i] = x[i]
+        elif value != x[i]:
+            g_hypothesis[i] = "?"
+        
+    specialisations.add(tuple(g_hypothesis))
+    return specialisations 
+    
 
 def minimal_specialisations(code, domains, x):
-    """Specialise the hypothesis minimally so that it does not match x."""
-    specialisations = set()
-    for i, (c, xi) in enumerate(zip(code, x)):
-        if c == '?':
-            for v in domains[i]:
-                if v != xi:
-                    new_code = list(code)
-                    new_code[i] = v
-                    specialisations.add(tuple(new_code))
-    return specialisations
+    s_hypothesis = set()
 
-def all_agree(S, G, x):
-    """
-    Determines if all hypotheses in the version space agree on the classification of x.
-    
-    Parameters:
-    - S: A set of the most specific hypotheses.
-    - G: A set of the most general hypotheses.
-    - x: An input example to classify.
-    
-    Returns:
-    - True if all hypotheses agree on the classification of x; False otherwise.
-    """
-    # Determine the classification of x according to S and G
-    classifications = {match(s, x) for s in S}.union({match(g, x) for g in G})
-    
-    # If all hypotheses agree, there will only be one classification (True or False)
-    return len(classifications) == 1
+    for i, c in enumerate(code):
+        if c == '?':  
+            for feature in domains[i]:
+                if feature != x[i]:
+                    h_hypothesis = list(code).copy()
+                    h_hypothesis[i] = feature  
+                    s_hypothesis.add(tuple(h_hypothesis))
+    return s_hypothesis
 
-def cea_trace(domains, training_examples):
-    S_trace, G_trace = [], []
-    S = initial_S(domains)  # Initialize S with the most specific hypothesis
-    G = initial_G(domains)  # Initialize G with the most general hypothesis
-    
-    # Append initial S and G to their respective traces
-    S_trace.append({S})
-    G_trace.append({G})
+def more_specific(h,H):
+    for other_h in H:
+        if lge(h,other_h) and other_h != h:
+            return True
+    return False
+
+def more_general(h,H):
+    for other_h in H:
+        if lge(other_h,h) and other_h != h:
+            return True
+    return False
  
-    for x, y in training_examples:
-        if y:  # Positive example
-            G = {g for g in G if match(g, x)}  # Remove non-matching hypotheses from G
-            new_S = set()
-            for s in S:
-                if not match(s, x):
-                    new_S = new_S.union(minimal_generalisations(s, x, domains))
-                else:
-                    new_S.add(s)
-            S = {s for s in new_S if any(match(g, s) for g in G)}
-        else:  # Negative example
-            S = {s for s in S if not match(s, x)}  # Remove matching hypotheses from S
-            new_G = set()
-            for g in G:
-                if match(g, x):
-                    new_G = new_G.union(minimal_specialisations(g, domains, x))
-                else:
-                    new_G.add(g)
-            G = {g for g in new_G if any(match(s, g) for s in S)}
+
+def cea_trace(domains, D):
+    S_trace, G_trace = [], []
+    S = initial_S(domains)
+    G = initial_G(domains)
+    S_trace.append(S.copy())
+    G_trace.append(G.copy())
+    
+    for x, y in D:
+        if y: # if positive
+            G = {g for g in G if match(g,x)}
+            for s in {s for s in S if not match(s,x)}:
+                S.remove(s)
+                
+                for h in minimal_generalisations(s,x):
+                    if match(h,x) and any(lge(h,g) for g in G):
+                        S.add(h)
         
-        # Append the current S and G to their traces
-        S_trace.append(S)
-        G_trace.append(G)
+            for h in S.copy():
+                if more_general(h,S):
+                    S.remove(h)
+
+        else: # if negative
+            S = {s for s in S if not match(s,x)}
+            for g in {g for g in G if match(g,x)}:
+                G.remove(g)
+                for h in minimal_specialisations(g,domains,x):
+                    if (not match(h,x)) and any(lge(s,h) for s in S):
+                        G.add(h)
+                        
+            for h in G.copy():
+                if more_specific(h,G):
+                    G.remove(h)
+            
+        S_trace.append(S.copy())
+        G_trace.append(G.copy())
 
     return S_trace, G_trace
 
 
+def all_agree(S, G, x):
+    s_prediction = None
+    g_predictions = set()
+
+    for s in S:
+        s_prediction = match(s, x)
+        break 
+
+    for g in G:
+        g_predictions.add(match(g, x))
+
+    return len(g_predictions) == 1 and next(iter(g_predictions)) == s_prediction
+
+# =========== TEST 1 -------------
 domains = [
     {'red', 'blue'},
 ]
@@ -112,5 +131,5 @@ training_examples = [
 
 S_trace, G_trace = cea_trace(domains, training_examples)
 S, G = S_trace[-1], G_trace[-1]
-print(all_agree(S, G, ('red',)))  # Expected to print True or False based on whether all agree
-print(all_agree(S, G, ('blue',)))  # Expected to print True or False based on whether all agree
+print(all_agree(S, G, ('red',)))
+print(all_agree(S, G, ('blue',)))
